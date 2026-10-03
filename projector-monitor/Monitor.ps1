@@ -3,7 +3,6 @@ $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Security
 . (Join-Path $PSScriptRoot 'Slot.ps1')
 $fleetPath=Join-Path $PSScriptRoot 'fleet.json'
-$fields=@('config','status','worker','controlWorker','control','requests','nextCheck','generation','credentialError')
 $sizes=@{compact=@(230,114);standard=@(280,142);large=@(330,166)}
 # Optional shared hosting. Default is loopback only.
 $network=@{bindAddress='';allowedClients=@()}
@@ -12,16 +11,11 @@ if(Test-Path $networkFile){$network=Get-Content $networkFile -Raw|ConvertFrom-Js
 $allowed=@($network.allowedClients)
 $listener=New-Object Net.HttpListener
 $running=$true
-function New-Slot($id,$config){return @{id=$id;config=$config;status=@{connection='offline';error='';checkedAt=$null};worker=$null;controlWorker=$null;control=$null;requests=@{};nextCheck=[DateTime]::UtcNow;generation=0;credentialError=$false}}
-function Load-Slot($slot){foreach($field in $fields){Set-Variable -Name $field -Scope Script -Value $slot[$field]}}
-function Save-Slot($slot){foreach($field in $fields){$slot[$field]=Get-Variable -Name $field -Scope Script -ValueOnly}}
-function Stop-Slot($slot){foreach($field in @('worker','controlWorker')){if($slot[$field]){$slot[$field].shell.Stop();$slot[$field].shell.Dispose();$slot[$field]=$null}}}
 function Persist($view,$items){
  $data=@{version=2;view=$view;projectors=@($items|ForEach-Object {@{id=$_.id;config=$_.config}})}|ConvertTo-Json -Depth 8
  [IO.File]::WriteAllText($fleetPath+'.tmp',$data,(New-Object Text.UTF8Encoding($false)))
- $saved=$false
  for($attempt=0;$attempt -lt 5;$attempt++){
-  try{if(Test-Path $fleetPath){[IO.File]::Replace($fleetPath+'.tmp',$fleetPath,[NullString]::Value)}else{[IO.File]::Move($fleetPath+'.tmp',$fleetPath)};$saved=$true;break}catch{if($attempt -eq 4){throw};Start-Sleep -Milliseconds 100}
+  try{if(Test-Path $fleetPath){[IO.File]::Replace($fleetPath+'.tmp',$fleetPath,[NullString]::Value)}else{[IO.File]::Move($fleetPath+'.tmp',$fleetPath)};break}catch{if($attempt -eq 4){throw};Start-Sleep -Milliseconds 100}
  }
 }
 function Dimensions($settings=$false){if($settings){return @(620,600)};$s=$sizes[$script:view.size];$cols=[Math]::Min([int]$script:view.columns,$script:slots.Count);$rows=[Math]::Ceiling($script:slots.Count/$cols);return @([int]($cols*$s[0]+($cols-1)*4+12),[int]($rows*$s[1]+($rows-1)*4+44))}
@@ -50,13 +44,13 @@ $listener.Prefixes.Add("http://localhost:$HttpPort/")
 if(!$TestMode -and $network.bindAddress){$listener.Prefixes.Add("http://$($network.bindAddress):$HttpPort/")}
 $listener.Start();$pending=$listener.GetContextAsync()
 try{while($running){
- if(!$TestMode){foreach($slot in $script:slots){Load-Slot $slot;Update-Projector;Save-Slot $slot}}
+ if(!$TestMode){foreach($slot in $script:slots){Update-Projector $slot}}
  if(!$pending.IsCompleted){Start-Sleep -Milliseconds 30;continue}
  $ctx=$pending.GetAwaiter().GetResult();$pending=$listener.GetContextAsync();$req=$ctx.Request;$path=$req.Url.AbsolutePath
  try{
   if(![Net.IPAddress]::IsLoopback($req.RemoteEndPoint.Address) -and $req.RemoteEndPoint.Address.ToString() -notin $allowed){Reply $ctx 403 '{"error":"Access denied"}';continue}
   if($req.HttpMethod -eq 'GET' -and $path -eq '/api/status'){
-   $public=@(foreach($slot in $script:slots){Load-Slot $slot;@{id=$slot.id;config=(Public-Config);status=$slot.status;checking=[bool]$slot.worker;control=$slot.control}})
+   $public=@(foreach($slot in $script:slots){@{id=$slot.id;config=(Public-Config $slot);status=$slot.status;checking=[bool]$slot.worker;control=$slot.control}})
    Reply $ctx 200 (@{app='disguise-projector-monitor-v2';view=$script:view;projectors=$public}|ConvertTo-Json -Depth 9 -Compress);continue
   }
   if($req.HttpMethod -eq 'POST'){
@@ -72,10 +66,7 @@ try{while($running){
     foreach($p in $body.projectors){
      if($p.id -isnot [string] -or $p.id -notmatch '^[a-zA-Z0-9-]{1,80}$' -or $seen.ContainsKey($p.id)){throw 'Invalid projector ID'};$seen[$p.id]=$true
      $old=@($script:slots|Where-Object {$_.id -eq $p.id})|Select-Object -First 1
-     $script:config=if($old){$old.config}else{@{passwordProtected=''}}
-     $blank=($p.ip -eq '');if($blank){$p.ip='127.0.0.1'}
-     $clean=Validate-Config $p;if($blank){$clean.ip=''}
-     $next+=New-Slot $p.id $clean
+     $next+=New-Slot $p.id (Validate-Config $p $old.config)
     }
     $newView=@{size=$body.size;columns=[int]$body.columns};Persist $newView $next
     foreach($slot in $script:slots){Stop-Slot $slot};$script:slots=$next;$script:view=$newView
@@ -85,27 +76,28 @@ try{while($running){
     if($body.view -notin @('monitor','settings')){throw 'Invalid view'};$d=Dimensions ($body.view -eq 'settings')
     $fit=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'fit-window.py')).Replace('{{WIDTH}}',[string]$d[0]).Replace('{{HEIGHT}}',[string]$d[1]).Replace('{{PATH}}',$(if($body.view -eq 'settings'){'/settings'}else{'/'}))
     $vw=[int]$body.viewportWidth;$vh=[int]$body.viewportHeight;$ch=[int]$body.contentHeight
-     if($vw -lt 100 -or $vw -gt 10000 -or $vh -lt 100 -or $vh -gt 10000 -or $ch -lt 50 -or $ch -gt 10000){$vw=0;$vh=0;$ch=0}
-     $fit=$fit.Replace('{{VW}}',[string]$vw).Replace('{{VH}}',[string]$vh).Replace('{{CH}}',[string]$ch)
-$target=if([Net.IPAddress]::IsLoopback($req.RemoteEndPoint.Address)){'127.0.0.1'}else{$req.RemoteEndPoint.Address.ToString()}
-    try{if($TestMode){throw 'Test mode'};$r=Invoke-RestMethod "http://$target/api/session/python/execute" -Method Post -ContentType 'application/json' -Body (@{script=$fit}|ConvertTo-Json -Compress) -TimeoutSec 2;Reply $ctx 200 $r.returnValue}catch{Reply $ctx 200 '{"resized":0}'};continue
+    if($vw -lt 100 -or $vw -gt 10000 -or $vh -lt 100 -or $vh -gt 10000 -or $ch -lt 50 -or $ch -gt 10000){$vw=0;$vh=0;$ch=0}
+    $fit=$fit.Replace('{{VW}}',[string]$vw).Replace('{{VH}}',[string]$vh).Replace('{{CH}}',[string]$ch)
+    $target=if([Net.IPAddress]::IsLoopback($req.RemoteEndPoint.Address)){'127.0.0.1'}else{$req.RemoteEndPoint.Address.ToString()}
+    try{if($TestMode){throw 'Test mode'};$r=Invoke-RestMethod "http://$target/api/session/python/execute" -Method Post -ContentType 'application/json' -Body (@{script=$fit}|ConvertTo-Json -Compress) -TimeoutSec 2
+     Reply $ctx 200 $(if($r.returnValue -is [string]){$r.returnValue}else{$r.returnValue|ConvertTo-Json -Compress})}catch{Reply $ctx 200 '{"resized":0}'};continue
    }
    if($path -match '^/api/projectors/([a-zA-Z0-9-]+)/(?<operation>check|control)$'){
     $id=$Matches[1];$op=$Matches.operation;$slot=@($script:slots|Where-Object {$_.id -eq $id})|Select-Object -First 1
-    if(!$slot){Reply $ctx 404 '{"error":"Projector removed"}';continue};Load-Slot $slot
-    if($op -eq 'check'){$script:nextCheck=[DateTime]::UtcNow;Save-Slot $slot;Reply $ctx 200 '{"ok":true}';continue}
+    if(!$slot){Reply $ctx 404 '{"error":"Projector removed"}';continue};$config=$slot.config;$status=$slot.status
+    if($op -eq 'check'){$slot.nextCheck=[DateTime]::UtcNow;Reply $ctx 200 '{"ok":true}';continue}
     if($body.action -notin @('power-on','power-off','shutter-open','shutter-close') -or $body.id -isnot [string] -or $body.id -notmatch '^[a-zA-Z0-9-]{8,80}$'){throw 'Invalid command'}
-    if($script:requests.ContainsKey($body.id)){Reply $ctx 200 ($script:requests[$body.id]|ConvertTo-Json -Compress);continue}
+    if($slot.requests.ContainsKey($body.id)){Reply $ctx 200 ($slot.requests[$body.id]|ConvertTo-Json -Compress);continue}
     if($TestMode){Reply $ctx 409 '{"error":"Controls disabled in test mode"}';continue}
-    if($script:controlWorker){Reply $ctx 409 '{"error":"Command already running"}';continue}
-    if($body.ip -ne $script:config.ip -or $body.port -ne $script:config.port){Reply $ctx 409 '{"error":"Settings changed. Refresh first"}';continue}
-    if($script:status.connection -notin @('online','partial') -or !$script:status.checkedAt -or ([DateTime]::UtcNow-[DateTime]::Parse($script:status.checkedAt).ToUniversalTime()).TotalSeconds -gt 25){Reply $ctx 409 '{"error":"Wait for current projector status"}';continue}
-    $password=Get-Password;$shell=[PowerShell]::Create()
-    [void]$shell.AddCommand((Join-Path $PSScriptRoot 'Projector.ps1')).AddParameter('Address',$script:config.ip).AddParameter('Port',$script:config.port).AddParameter('Username',$script:config.username).AddParameter('Password',$password).AddParameter('Action',$body.action)
-    $script:control=@{id=$body.id;action=$body.action;state='pending';message='Sending command'};$script:requests[$body.id]=$script:control;$script:generation++
-    $script:controlWorker=@{shell=$shell;handle=$shell.BeginInvoke()};$password=$null;Save-Slot $slot
+    if($slot.controlWorker){Reply $ctx 409 '{"error":"Command already running"}';continue}
+    if($body.ip -ne $config.ip -or $body.port -ne $config.port){Reply $ctx 409 '{"error":"Settings changed. Refresh first"}';continue}
+    if($status.connection -notin @('online','partial') -or !$status.checkedAt -or ([DateTime]::UtcNow-[DateTime]::Parse($status.checkedAt).ToUniversalTime()).TotalSeconds -gt 25){Reply $ctx 409 '{"error":"Wait for current projector status"}';continue}
+    # Request IDs make retries idempotent; only recent ones need remembering.
+    if($slot.requests.Count -ge 32){$slot.requests.Clear()}
+    $slot.control=@{id=$body.id;action=$body.action;state='pending';message='Sending command'};$slot.requests[$body.id]=$slot.control;$slot.generation++
+    $password=Get-Password $config;$slot.controlWorker=Start-Worker $slot $password $body.action;$password=$null
     Add-Content (Join-Path $PSScriptRoot 'controls.jsonl') (@{at=[DateTime]::UtcNow.ToString('o');projector=$slot.id;action=$body.action;id=$body.id;source=$req.RemoteEndPoint.Address.ToString()}|ConvertTo-Json -Compress)
-    Reply $ctx 202 ($script:control|ConvertTo-Json -Compress);continue
+    Reply $ctx 202 ($slot.control|ConvertTo-Json -Compress);continue
    }
   }
   if($req.HttpMethod -eq 'GET' -and $path -in @('/','/settings','/app.js','/style.css')){
