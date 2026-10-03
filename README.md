@@ -5,7 +5,7 @@ Four independent Windows plugins for Disguise Designer. Install only the folders
 | Plugin | Purpose | Local port | Runtime |
 | --- | --- | --- | --- |
 | [Device Monitor](device-monitor/) | ICMP reachability and latency | 18743 | Windows PowerShell 5.1 |
-| [Projector Monitor](projector-monitor/) | Panasonic power, shutter and status; up to 12 projectors | 18745 | Windows PowerShell 5.1 |
+| [Projector Monitor](projector-monitor/) | Panasonic and Epson power, shutter and status; up to 12 projectors | 18745 | Windows PowerShell 5.1 |
 | [World Clock](world-clock/) | Up to 8 timezones, configurable sizes | 18753 | Windows PowerShell 5.1 |
 | [Videohub Monitor](videohub-monitor/) | Blackmagic routing matrix, batch Take and port filters | 18751 | Node.js 22 or newer |
 
@@ -30,6 +30,6 @@ Compact, Standard and Large use matching baseline widths. Matrix windows grow wi
 
 ## Version and tests
 
-Initial repository release: **1.0.0**. See [CHANGELOG.md](CHANGELOG.md). Loopback Videohub tests are in `tests`; no hardware is contacted by these tests.
+Current release: **1.1.0**. See [CHANGELOG.md](CHANGELOG.md). Loopback Videohub tests are in `tests`; no hardware is contacted by these tests.
 
 NRMW

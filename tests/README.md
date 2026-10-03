@@ -1,1 +1,1 @@
-Run `node tests/test-batch.mjs` and `node tests/test-ui.mjs` from the repository root. Both are isolated; batch tests bind only to loopback and never contact a real matrix.
+Run `node tests/test-batch.mjs`, `node tests/test-ui.mjs` and `node tests/test-projector.mjs` from the repository root. All are isolated and bind only to loopback; no real matrix or projector is contacted. The projector test runs `Projector.ps1` against fake Epson (HTTP Digest) and Panasonic (NTCONTROL) servers and needs `powershell.exe` or `pwsh`; it skips itself when neither is available.
