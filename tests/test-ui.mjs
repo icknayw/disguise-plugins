@@ -1,0 +1,10 @@
+import vm from 'node:vm';import fs from 'node:fs';import assert from 'node:assert/strict';
+class E{constructor(tag='div'){this.tag=tag;this.children=[];this.classList={toggle(){}};this.dataset={};this.scrollLeft=this.scrollTop=0;}append(...x){this.children.push(...x)}replaceChildren(...x){this.children=x}setAttribute(k,v){this[k]=v}getBoundingClientRect(){return {width:200,height:300}}}
+const ids=new Map();const get=id=>{if(!ids.has(id))ids.set(id,new E());return ids.get(id)};
+const c=vm.createContext({document:{getElementById:get,createElement:t=>new E(t),createTextNode:s=>s,querySelectorAll:()=>[],querySelector:()=>null,body:new E(),fonts:{ready:new Promise(()=>{})}},window:{addEventListener(){}},location:{pathname:'/'},setTimeout(){},clearTimeout(){},fetch:()=>new Promise(()=>{}),AbortSignal,Date,console,innerWidth:242,innerHeight:300});
+vm.runInContext(fs.readFileSync(new URL('../videohub-monitor/app.js',import.meta.url),'utf8'),c);
+vm.runInContext(`current={settings:{size:'compact',host:'127.0.0.1',inputs:null,outputs:null},inputs:[{number:1,label:'A'},{number:2,label:'B'},{number:3,label:'C'}],outputs:[{number:1,label:'X'},{number:2,label:'Y'}],routes:{1:1,2:1},locks:{1:'U',2:'U'},connection:'online',updatedAt:new Date().toISOString()};fresh=true;render();`,c);
+function buttons(n=get('matrix')){return [ ...(n.tag==='button'?[n]:[]),...n.children.filter(x=>typeof x==='object').flatMap(buttons)]}
+const click=(i,o)=>buttons().find(b=>b['aria-label'].startsWith('Input '+i+' ')&&b['aria-label'].includes(' output '+o+' ')).onclick();
+click(2,1);click(3,2);assert.equal(get('take').textContent,'Take (2)');click(2,1);assert.equal(get('take').textContent,'Take (1)');click(2,2);assert.equal(get('selection').textContent,'2 → 2');get('cancel').onclick();assert.equal(get('take').disabled,true);
+vm.runInContext(`current.settings.orientation='inputs-top';render();`,c);assert.equal(get('matrix').children[0].children[1].children.length,2);click(3,1);click(2,2);assert.equal(get('take').textContent,'Take (2)');assert.equal(buttons().length,6);console.log('Selection, deselection, replacement, cancel and transposed routes passed');

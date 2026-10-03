@@ -1,0 +1,8 @@
+{
+  "id": "videohub-matrix",
+  "protocol": "videohub",
+  "title": "Videohub Monitor",
+  "port": 18751,
+  "bind": "127.0.0.1",
+  "allowedHosts": []
+}

@@ -1,0 +1,3 @@
+$ErrorActionPreference='Stop'
+try{$health=Invoke-RestMethod 'http://localhost:18745/api/status' -TimeoutSec 2;if($health.app -eq 'disguise-projector-monitor-v2'){exit};throw 'Port 18745 is occupied. Stop the old monitor first.'}catch{if($_.Exception.Message -like '*occupied*'){throw}}
+Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',('"'+(Join-Path $PSScriptRoot 'Monitor.ps1')+'"')) -RedirectStandardOutput (Join-Path $PSScriptRoot 'helper.log') -RedirectStandardError (Join-Path $PSScriptRoot 'helper-error.log')

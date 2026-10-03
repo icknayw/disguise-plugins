@@ -1,0 +1,5 @@
+{
+  "name": "Device Monitor",
+  "url": "http://localhost:18743/",
+  "requiresSession": false
+}

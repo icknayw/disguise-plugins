@@ -1,0 +1,5 @@
+{
+  "name": "Videohub Monitor",
+  "url": "http://127.0.0.1:18751/",
+  "requiresSession": false
+}

@@ -1,0 +1,15 @@
+*.log
+*.ndjson
+*.pid
+*.bak
+*.tmp
+__pycache__/
+*.pyc
+**/devices.json
+**/view.json
+**/fleet.json
+**/settings.json
+**/clock-settings.json
+**/network.json
+**/runtime/
+*.zip
